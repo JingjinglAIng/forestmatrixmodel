@@ -1,14 +1,15 @@
-# forestmatrixmodel
-Global forest matrix demographic model (MATRIX)
 MATRIX Simulation (Unified) — README
 
-This README accompanies matrix_simulation.R, a single, public-ready R script that runs MATRIX forest stand simulations in two modes:
+This README accompanies matrix_simulation.R, a public-ready R script that runs MATRIX forest stand simulations in two modes:
 
 NA_FT — North America workflow using Forest Type (FT) models and FT biomass vectors.
 
 GLOBAL_GEC — Global (non-NA) workflow using continent-keyed models and Ecozone (GEC) biomass vectors.
 
 The script discovers missing output chunks, supports SLURM arrays or CLI index, records annual AGB (total, upgrowth, recruitment, mortality), and optionally uses time-varying climate.
+
+📦 All trained random forest models are provided in the models.zip file.
+Unzip this file and point --models to the extracted directory.
 
 Quick Start
 # GLOBAL mode (GEC biomass, models keyed by CONT):
@@ -44,36 +45,31 @@ randomForest
 
 stringr
 
-Install packages:
-
-install.packages(c("randomForest","stringr"))
+install.packages(c("randomForest", "stringr"))
 
 Inputs
-1) Mapping Grid CSV (--input)
 
+Mapping Grid CSV (--input)
 A chunked grid containing stand structure, site covariates, and identifiers.
 
 Required columns (by mode):
 
 Common:
+ID, ChunkID, CONTINENT, optional LAT, LON
+DBH1…DBH13 (trees/ha per DBH class)
+Climate covariates: C1…C21
+Optional: C1S1…C21S1 (RCP45), C1S2…C21S2 (RCP85)
 
-ID, ChunkID, CONTINENT (e.g., NAmerica, Africa), optional LAT, LON
+NA_FT: requires FT (forest type code)
 
-DBH distribution: DBH1…DBH13 (trees/ha by DBH class)
-
-Climate covariates (constant): C1…C21
-
-Optional scenario columns: C1S1…C21S1 (RCP45), C1S2…C21S2 (RCP85)
-
-NA_FT additionally needs: FT (forest type code)
-
-GLOBAL_GEC additionally needs: GEC (ecozone code)
+GLOBAL_GEC: requires GEC (ecozone code)
 
 The script sets dY = --years internally.
 
-2) Models directory (--models)
+Models directory (--models)
+Unzip the provided models.zip archive before running.
 
-NA_FT expects exact FT-specific files:
+NA_FT expects FT-specific files:
 
 RF.UG.0503.ft.<FT>.RData
 
@@ -91,17 +87,16 @@ RF.MT.*<CONT>.RData
 
 Each file defines an object RF (a randomForest model).
 
-3) Biomass CSV (--biomass)
+Biomass CSV (--biomass)
 
-NA_FT: must contain columns named FT<FT> with 13 values each (kg/tree per DBH class).
+NA_FT: must contain columns named FT<FT> (13 values each, kg/tree by DBH class).
 
-GLOBAL_GEC: must contain columns named by GEC (e.g., Boreal, TropMoist), each with 13 values.
+GLOBAL_GEC: must contain columns named by GEC (e.g., Boreal, TropMoist).
 
-The script selects the correct column per row and converts to Mg/ha (/ 1000).
+The script selects the correct column per row and converts to Mg/ha (/1000).
 
-4) Bioclimate CSV (--bioclim, optional)
-
-A wide table with annual climate covariates indexed by ID. If omitted, the script uses constant climate from the covariates in --input.
+Bioclimate CSV (--bioclim, optional)
+Annual climate covariates indexed by ID. If omitted, the script uses constant climate from --input.
 
 Outputs
 
@@ -118,34 +113,28 @@ Initial DBH distribution: TPH1_1…TPH1_13
 
 Final DBH distribution: TPH2_1…TPH2_13
 
-Annual sequence (for dY = --years):
+Annual sequence (for dY years):
+Y1, AGB1, UP1, RC1, MT1, Y2, AGB2, ...
 
-Y1, AGB1, UP1, RC1, MT1, Y2, AGB2, UP2, RC2, MT2, ...
+Units:
 
-AGB = total aboveground biomass (Mg/ha)
+AGB, UP, RC, MT are in Mg/ha.
 
-UP, RC, MT = annual components (Mg/ha): upgrowth, recruitment, mortality
-
-Year is the number of simulated years (e.g., 25). Internal annual timestamps use 1999 + m.
+S1 = Shannon index, S2 = Simpson index.
 
 Command-Line Flags
 Flag	Required	Default	Description
---mode	✳︎	GLOBAL_GEC	NA_FT or GLOBAL_GEC
---input	✳︎	—	Input grid CSV
---models	✳︎	—	Directory with RF models
---biomass	✳︎	—	Biomass conversion CSV
---out_dir	✳︎	—	Output directory
---out_prefix		glob3km_onehot_25y (GLOBAL) / glob3km_nam_25y (NA)	Output filename prefix
---clim		CC	CC, RCP45, RCP85
---years		25	Number of years to simulate (dY)
---continent		(none)	Filter input to a single CONTINENT (recommended for mode separation)
---bioclim		(none)	Bioclimate annual CSV; if omitted, constant climate used
---quiet		false	Reduce console messages
-
-Indexing:
-
-SLURM_ARRAY_TASK_ID or first positional arg (1-based) selects the nth missing chunk to compute.
-
+--mode	✓	GLOBAL_GEC	Mode: NA_FT or GLOBAL_GEC
+--input	✓	—	Input grid CSV
+--models	✓	—	Directory with RF models (from models.zip)
+--biomass	✓	—	Biomass conversion CSV
+--out_dir	✓	—	Output directory
+--out_prefix		Mode-dependent	Output filename prefix
+--clim		CC	Climate scenario: CC, RCP45, RCP85
+--years		25	Number of simulation years
+--continent		—	Restrict to one CONTINENT
+--bioclim		—	Bioclimate annual CSV (optional)
+--quiet		false	Suppress console messages
 SLURM Examples
 # GLOBAL mode
 sbatch --array=1-100 --wrap \
@@ -169,86 +158,18 @@ sbatch --array=1-200 --wrap \
   --clim=CC --years=25 --continent=NAmerica \
   --out_prefix=glob3km_nam_25y --quiet=true'
 
-How It Works (Brief)
-
-Chunk discovery: Finds all ChunkID in --input, compares to files in --out_dir matching --out_prefix_*.csv, and identifies missing ones.
-
-Model selection:
-
-NA_FT: loads FT-specific RF.UG.0503.ft.<FT>.RData, RF.RC.0426.ft.<FT>.RData, RF.MT.0425.ft.<FT>.RData.
-
-GLOBAL_GEC: picks the first file matching RF.UG.*<CONT>.RData (and likewise for RC/MT).
-
-Annual loop: updates DBH class vector with upgrowth, stasis, mortality, and recruitment; computes AGB and components using the appropriate biomass vector (FT or GEC).
-
-Output: writes one CSV per chunk; atomic write via *.tmp_$$ then rename, with a .lock_<prefix>_<ChunkID> to avoid duplicate work.
-
-Data Conventions & Units
-
-DBH classes: 13 bins; internal mean DBH vector is fixed in the script.
-
-AGB and its components (UP, RC, MT) are in Mg/ha.
-
-Diversity:
-
-S1 = Shannon index
-
-S2 = Simpson index
-
-Biomass vectors are kg per tree per DBH class (converted to Mg/ha by /1000).
-
-Troubleshooting
-
-“Biomass vector not found”:
-Ensure your biomass CSV has columns named:
-
-NA_FT: FT<FT> (e.g., FTPine, FTMixedHardwood)
-
-GLOBAL_GEC: names exactly matching GEC values in your input
-
-“Cannot find model files for CONT” (GLOBAL_GEC):
-Check that model filenames contain the continent string from CONTINENT (e.g., Africa, SAmerica, Europe).
-
-All chunks processed but job still running:
-The script exits early if nothing is missing; ensure --out_prefix matches what’s already written.
-
-Parallel collisions:
-Lock files .lock_<prefix>_<ChunkID> prevent duplicate work. If a crashed job leaves a stale lock, remove it only after confirming no running job uses that chunk.
-
-Climate scenarios:
-If --bioclim is omitted, the script uses constant climate:
-
---clim=CC: C1..C21
-
---clim=RCP45: C1S1..C21S1
-
---clim=RCP85: C1S2..C21S2
-
-Reproducibility Tips
-
-Record:
-
-Git commit (if you version your inputs/models)
-
-R version and package versions
-
-Command line used (all flags)
-
-Pin model filenames and biomass tables in a manifest.
-
 Citation
 
 If this work contributes to a publication, please cite the MATRIX modeling framework and related datasets/models from your Methods, and acknowledge:
 
-Liang, J. et al. (under review) The hidden demography of the 21st century global forest carbon sink.
+Liang, J. et al. (under review). The hidden demography of the 21st century global forest carbon sink.
 
 License
-MIT
+
+MIT License
 
 Maintainer
 
 Jingjing Liang — albeca.liang@gmail.com
 
 Contributions, issues, and improvements are welcome.
-
-ChatGPT can make mistakes. OpenAI doesn't use FACAI-Purdue workspace data to train its models.
