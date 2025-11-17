@@ -1,18 +1,57 @@
-MATRIX Simulation (Unified) — README
+# MATRIX – Global Forest Demography & Carbon Modeling
 
-This README accompanies matrix_simulation.R, a public-ready R script that runs MATRIX forest stand simulations in two modes:
+This repository contains:
 
-NA_FT — North America workflow using Forest Type (FT) models and FT biomass vectors.
+- **Training workflows** for continent-specific Random Forest models of forest demography (upgrowth, mortality, and recruitment) using global plot data.
+- **Unified stand simulation workflows** that apply these trained models to 3 km grids globally and in North America.
 
-GLOBAL_GEC — Global (non-NA) workflow using continent-keyed models and Ecozone (GEC) biomass vectors.
+All code is released under the **MIT License** (see `LICENSE`).
+
+---
+
+## 1. MATRIX Training (Global RF Models)
+
+The script `matrix_training.R` (and related functions) prepares global plot-level data, extracts covariates, and trains continent-keyed Random Forest models for:
+
+- **Upgrowth (UG)** – diameter increment (`dD`)
+- **Mortality (MT)** – annual mortality probability
+- **Recruitment (RC)** – annual ingrowth above a DBH threshold
+
+Core components:
+
+- `cov_func2()`: extracts ~40+ climate, soil, anthropogenic, and topographic covariates plus GEZ and continent.
+- `replace_rows_with_nearest()`: imputes missing covariates using nearest-neighbor plots in geographic space.
+- `MATRIX_RF_func()`: tunes and trains continent-specific Random Forest models with one-hot encoded ecozones.
+
+Trained model files are written as:
+
+- `RF.UG.<date>.CONT.<CONT>.RData`
+- `RF.MT.<date>.CONT.<CONT>.RData`
+- `RF.RC.<date>.CONT.<CONT>.RData`
+
+These are the same models consumed by the unified simulation script described below.
+
+---
+
+## 2. MATRIX Simulation (Unified) — README
+
+This README accompanies `matrix_simulation.R`, a public-ready R script that runs MATRIX forest stand simulations in two modes:
+
+- **`NA_FT`** — North America workflow using Forest Type (FT) models and FT biomass vectors.  
+- **`GLOBAL_GEC`** — Global (non-NA) workflow using continent-keyed models and Ecozone (GEC) biomass vectors.
 
 The script discovers missing output chunks, supports SLURM arrays or CLI index, records annual AGB (total, upgrowth, recruitment, mortality), and optionally uses time-varying climate.
 
-📦 All trained random forest models are provided in the models.zip file.
-Unzip this file and point --models to the extracted directory.
+📦 **All trained random forest models are provided in the `models.zip` file.**  
+Unzip this file and point `--models` to the extracted directory.
 
-Quick Start
-# GLOBAL mode (GEC biomass, models keyed by CONT):
+---
+
+### Quick Start
+
+**GLOBAL mode** (GEC biomass, models keyed by `CONT`):
+
+```bash
 Rscript matrix_simulation.R \
   --mode=GLOBAL_GEC \
   --input=/path/Grid3km_cov_Dvec_OneHot_500Chunk_0405.csv \
@@ -21,8 +60,10 @@ Rscript matrix_simulation.R \
   --out_dir=/path/25y_outputs \
   --clim=CC --years=25 --continent=Africa \
   --out_prefix=glob3km_onehot_25y
+North America mode (FT biomass, FT-specific model files):
 
-# North America mode (FT biomass, FT-specific model files):
+bash
+Copy code
 Rscript matrix_simulation.R \
   --mode=NA_FT \
   --input=/path/Grid3km_cov_Dvec_OneHot_500Chunk_0411.csv \
@@ -31,12 +72,10 @@ Rscript matrix_simulation.R \
   --out_dir=/path/25y_outputs \
   --clim=CC --years=25 --continent=NAmerica \
   --out_prefix=glob3km_nam_25y
-
-
-The script auto-selects the missing ChunkIDs (based on existing files in --out_dir). Provide the target index via SLURM_ARRAY_TASK_ID or the first CLI positional arg (1-based).
+The script auto-selects the missing ChunkIDs (based on existing files in --out_dir).
+Provide the target index via SLURM_ARRAY_TASK_ID or the first CLI positional arg (1-based).
 
 Installation & Requirements
-
 R ≥ 4.1
 
 R packages:
@@ -45,20 +84,28 @@ randomForest
 
 stringr
 
+Install:
+
+r
+Copy code
 install.packages(c("randomForest", "stringr"))
-
 Inputs
-
-Mapping Grid CSV (--input)
+1. Mapping Grid CSV (--input)
 A chunked grid containing stand structure, site covariates, and identifiers.
 
 Required columns (by mode):
 
 Common:
+
 ID, ChunkID, CONTINENT, optional LAT, LON
+
 DBH1…DBH13 (trees/ha per DBH class)
+
 Climate covariates: C1…C21
+
 Optional: C1S1…C21S1 (RCP45), C1S2…C21S2 (RCP85)
+
+Mode-specific:
 
 NA_FT: requires FT (forest type code)
 
@@ -66,7 +113,7 @@ GLOBAL_GEC: requires GEC (ecozone code)
 
 The script sets dY = --years internally.
 
-Models directory (--models)
+2. Models directory (--models)
 Unzip the provided models.zip archive before running.
 
 NA_FT expects FT-specific files:
@@ -87,24 +134,23 @@ RF.MT.*<CONT>.RData
 
 Each file defines an object RF (a randomForest model).
 
-Biomass CSV (--biomass)
-
+3. Biomass CSV (--biomass)
 NA_FT: must contain columns named FT<FT> (13 values each, kg/tree by DBH class).
 
 GLOBAL_GEC: must contain columns named by GEC (e.g., Boreal, TropMoist).
 
 The script selects the correct column per row and converts to Mg/ha (/1000).
 
-Bioclimate CSV (--bioclim, optional)
-Annual climate covariates indexed by ID. If omitted, the script uses constant climate from --input.
+4. Bioclimate CSV (--bioclim, optional)
+Annual climate covariates indexed by ID.
+If omitted, the script uses constant climate from --input.
 
 Outputs
-
 For each processed ChunkID, the script writes:
 
+text
+Copy code
 <out_dir>/<out_prefix>_<ChunkID>.csv
-
-
 Schema (superset; some columns may be NA if not in input):
 
 Core: ID, LAT, LON, GEC, FT, CONT, Year, B, N, S1, S2
@@ -114,7 +160,8 @@ Initial DBH distribution: TPH1_1…TPH1_13
 Final DBH distribution: TPH2_1…TPH2_13
 
 Annual sequence (for dY years):
-Y1, AGB1, UP1, RC1, MT1, Y2, AGB2, ...
+
+Y1, AGB1, UP1, RC1, MT1, Y2, AGB2, …
 
 Units:
 
@@ -135,8 +182,12 @@ Flag	Required	Default	Description
 --continent		—	Restrict to one CONTINENT
 --bioclim		—	Bioclimate annual CSV (optional)
 --quiet		false	Suppress console messages
+
 SLURM Examples
-# GLOBAL mode
+GLOBAL mode
+
+bash
+Copy code
 sbatch --array=1-100 --wrap \
 'Rscript matrix_simulation.R \
   --mode=GLOBAL_GEC \
@@ -146,8 +197,10 @@ sbatch --array=1-100 --wrap \
   --out_dir=/scratch/.../25y_0820 \
   --clim=CC --years=25 --continent=Africa \
   --out_prefix=glob3km_onehot_25y --quiet=true'
+NA mode
 
-# NA mode
+bash
+Copy code
 sbatch --array=1-200 --wrap \
 'Rscript matrix_simulation.R \
   --mode=NA_FT \
@@ -157,19 +210,15 @@ sbatch --array=1-200 --wrap \
   --out_dir=/scratch/.../25y_0820 \
   --clim=CC --years=25 --continent=NAmerica \
   --out_prefix=glob3km_nam_25y --quiet=true'
-
 Citation
-
-If this work contributes to a publication, please cite the MATRIX modeling framework and related datasets/models from your Methods, and acknowledge:
+If this work contributes to a publication, please cite the MATRIX modeling framework and related datasets/models in your Methods, and acknowledge:
 
 Liang, J. et al. (under review). The hidden demography of the 21st century global forest carbon sink.
 
 License
-
-MIT License
+MIT License (see LICENSE file).
 
 Maintainer
-
 Jingjing Liang — albeca.liang@gmail.com
 
 Contributions, issues, and improvements are welcome.
